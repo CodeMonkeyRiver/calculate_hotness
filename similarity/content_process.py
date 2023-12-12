@@ -1,7 +1,7 @@
 # content_process.py
 import openai
 
-openai.api_key = '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'  # 替换为你的 OpenAI API 密钥
+openai.api_key = '###'  # 替换为你的 OpenAI API 密钥
 
 def summary(text):
     # 这里实现摘要逻辑
