@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>热度评分系统</title>
+    <link rel="stylesheet" type="text/css" href="/static/css/index.css">
+    <script src="/static/js/index.js" type="text/javascript"></script>
+</head>
+<body>
+    <div class="container">
+        <div id="hot-list" class="hot-list">
+            <!-- 示例热度榜单条目 -->
+        </div>
+        <div class="text-analysis">
+            <textarea id="input-text" placeholder="请输入文本..."></textarea>
+            <div class="form-group">
+                <label for="creation-date">文章创建日期:</label>
+                <input type="date" id="creation-date" name="creation-date" required>
+            </div>
+            <button id="submit-button">摘要计算</button>
+            <div id="summary-container" class="summary" style="display: none;">
+                <!-- 摘要内容将在这里显示 -->
+            </div>
+            <button id="extract-entity-button"  style="display: none;">主体提取</button>
+            <div id="entity-container" class="extract" style="display: none;"></div>
+            <button id="calculate-button" style="display: none;">热度计算</button>
+            <div id="score-container" class="score-container" style="display: none;">评分结果将显示在这里</div>
+        </div>
+    </div>
+    <script>
+    window.onload = loadHotArticles;
+
+    document.getElementById('submit-button').onclick = function() {
+        var inputText = document.getElementById('input-text').value;
+        fetch('/submit', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'text=' + encodeURIComponent(inputText)
+        })
+        .then(response => response.json())
+        .then(data => {
+            var summaryContainer = document.getElementById('summary-container');
+            summaryContainer.innerHTML = data.summary;
+            summaryContainer.style.display = 'block';
+
+            var extractButton = document.getElementById('extract-entity-button');
+            extractButton.style.display = 'block';
+        });
+    };
+
+    function loadHotArticles() {
+        fetch('/get-hot-articles')
+        .then(response => response.json())
+        .then(articles => {
+            var hotListContainer = document.getElementById('hot-list');
+            hotListContainer.innerHTML = ''; // 清空原有内容
+            articles.forEach(article => {
+                var truncatedContent = truncateText(article.content, 100);
+                hotListContainer.innerHTML += `
+                    <div class="item">
+                        <div class="title"><a href="${article.url}">${article.title}</a></div>
+                        <div class="date">${article.date}</div>
+                        <div class="content">${truncatedContent}</div>
+                    </div>
+                `;
+            });
+        });
+    };
+
+
+
+    document.getElementById('extract-entity-button').onclick = function() {
+        // 模拟主体提取逻辑
+        var entityContainer = document.getElementById('entity-container');
+        var summaryText = document.getElementById('summary-container').innerText;
+        fetch('/extract', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'text=' + encodeURIComponent(summaryText)
+        })
+        .then(response => response.json())
+        .then(data => {
+            var entityContainer = document.getElementById('entity-container');
+            entityContainer.innerHTML = data.subject;
+            entityContainer.style.display = 'block';
+
+            var calculateButton = document.getElementById('calculate-button');
+            calculateButton.style.display = 'block';
+        });
+    };
+
+    document.getElementById('calculate-button').onclick = function() {
+        var subjects = document.getElementById('entity-container').innerText;
+        fetch('/calculate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: 'subjects=' + encodeURIComponent(subjects)
+         })
+        .then(response => response.json())
+        .then(data => {
+            var entityContainer = document.getElementById('score-container');
+            entityContainer.innerHTML = data;
+            entityContainer.style.display = 'block';
+            displayTopTwoArticlesPerTopic(data);
+        });
+    };
+
+    // 假设 data 是从后端接收到的热度计算结果
+    function displayTopThreeResults(data) {
+        alert(data)
+        var resultsContainer = document.getElementById('score-container');
+        resultsContainer.innerHTML = '';  // 清空现有内容
+        // 对结果按照分数排序并取前三项
+        var topThreeResults = data.sort((a, b) => b.score - a.score).slice(0, 3);
+
+        var list = document.createElement('ul');
+        topThreeResults.forEach(result => {
+            var listItem = document.createElement('li');
+            listItem.innerHTML = `
+                <strong>${result.topic}</strong> - 分数: ${result.score}
+                <br>
+                相关文章: <a href="${result.best_article.url}">${result.best_article.title}</a>
+            `;
+            list.appendChild(listItem);
+        });
+
+        resultsContainer.appendChild(list);
+    }
+
+    function displayTopTwoArticlesPerTopic(data) {
+        var resultsContainer = document.getElementById('score-container');
+        var creationDate = new Date(document.getElementById('creation-date').value);
+        resultsContainer.innerHTML = '';
+
+        data.forEach(item => {
+            var topicHeader = document.createElement('h3');
+            topicHeader.textContent = "主题: " + item.topic;
+            resultsContainer.appendChild(topicHeader);
+
+            var list = document.createElement('ul');
+            item.top_articles.forEach(article => {
+                var articleDate = new Date(article.article.date);
+                var timeDiff = Math.abs(creationDate - articleDate) / (1000 * 3600 * 24);
+                var timelinessScore = Math.max(100 - Math.floor(timeDiff / 3) * 5, 0);
+                var matchScore = article.score;
+
+                // 平方处理匹配度分数
+                if (matchScore < 0.8) {
+                    matchScore = Math.pow(matchScore, 2);
+                }
+
+                var finalScore = timelinessScore * matchScore;
+
+                var listItem = document.createElement('li');
+                listItem.innerHTML = `
+                    <strong>${article.article.title}</strong>
+                    <br>匹配度: ${article.score.toFixed(2)}
+                    <br>时效分: ${timelinessScore} (每超过三天降五分)
+                    <br>综合评分: ${finalScore.toFixed(2)}
+                    <br>
+                    <a href="${article.article.url}">阅读全文</a>
+                `;
+                list.appendChild(listItem);
+            });
+
+            resultsContainer.appendChild(list);
+        });
+    }
+
+
+    </script>
+
